@@ -1,110 +1,148 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 from groq import Groq
-from thefuzz import process, fuzz
 import io
+from datetime import datetime
 
-# 1. Page Configuration
-st.set_page_config(page_title="Efazi - Smart AI Data Analyst", layout="wide", page_icon="🤖")
+# --- UI CONFIGURATION ---
+st.set_page_config(page_title="Efazi - Careem ROD Automation", layout="wide", page_icon="🚀")
 
-# Custom CSS for a professional look
+# Professional CSS Styling
 st.markdown("""
     <style>
-    .main { background-color: #f5f7f9; }
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; }
-    .stAlert { border-radius: 10px; }
+    .main { background-color: #F8FAFC; }
+    .stButton>button { width: 100%; border-radius: 12px; height: 3.5em; background-color: #10B981; color: white; font-weight: bold; border: none; }
+    .stDownloadButton>button { width: 100%; border-radius: 12px; background-color: #4338CA; color: white; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. API Key Setup
+# --- API SETUP ---
 try:
-    GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
+    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 except:
-    GROQ_API_KEY = "Gsk_8Dp2FXDZupX0t1XqttYRWGdyb3FYw7KaqHb1mTIQ1BbERX6HWE5C"
+    st.error("API Key missing. Please add GROQ_API_KEY to Streamlit Secrets.")
+    st.stop()
 
-client = Groq(api_key=GROQ_API_KEY)
+# --- HELPER FUNCTIONS (CAREEM ROD LOGIC) ---
+def parse_date(d):
+    if pd.isna(d) or d == '': return None
+    try:
+        return pd.to_datetime(str(d).replace("'", ""))
+    except:
+        return None
 
-# 3. Sidebar - Guide & Uploads
-st.sidebar.image("https://img.icons8.com/fluency/96/robot-3.png", width=80)
-st.sidebar.title("Efazi AI v2.0")
-st.sidebar.markdown("---")
+def calculate_minutes(end, start):
+    if end and start:
+        diff = (end - start).total_seconds() / 60
+        return round(diff, 2)
+    return 0
 
-st.sidebar.subheader("📖 User Guide")
-st.sidebar.info("""
-1. **Upload Template:** Upload the report format your manager wants.
-2. **Upload Sources:** Upload 3-4 raw data files.
-3. **Analyze:** Use the AI tab to ask Efazi to merge and replicate.
-4. **Fuzzy Match:** Efazi automatically fixes typos in names!
-""")
+# --- DASHBOARD HEADER ---
+st.title("🚀 Efazi: Careem ROD Report Maker")
+st.markdown("Automated Data Processor • Direct ID Matching • Professional RCA Generation")
+st.divider()
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("📤 Upload Center")
-sample_file = st.sidebar.file_uploader("1. Sample Report (Template)", type=['csv', 'xlsx'])
-source_files = st.sidebar.file_uploader("2. Raw Source Files (3-4 files)", type=['csv', 'xlsx'], accept_multiple_files=True)
+# --- UPLOAD SECTION ---
+col1, col2, col3 = st.columns(3)
 
-# 4. Main Dashboard UI
-st.title("🤖 Efazi: Advanced Data Replicator")
-st.write("Welcome! I am **Efazi**, your smart AI analyst. Upload your files to begin the transformation.")
+with col1:
+    st.subheader("📍 Source-1")
+    st.caption("Tracking & Dates")
+    s1_file = st.file_uploader("Upload CSV/XLSX", type=['csv', 'xlsx'], key="s1")
 
-if not sample_file or not source_files:
-    st.warning("🚀 **Get Started:** Please upload your Template and Source files from the sidebar to activate the dashboard.")
-    st.image("https://i.imgur.com/vHqX2Z4.png", caption="Efazi is waiting for your data...")
+with col2:
+    st.subheader("📍 Source-2")
+    st.caption("Shipped Qty & Stores")
+    s2_file = st.file_uploader("Upload CSV/XLSX", type=['csv', 'xlsx'], key="s2")
 
-else:
-    # Load Files
-    df_sample = pd.read_csv(sample_file) if sample_file.name.endswith('.csv') else pd.read_excel(sample_file)
-    dataframes = {f.name: (pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f)) for f in source_files}
+with col3:
+    st.subheader("📍 Report Base")
+    st.caption("Main Rider Sheet")
+    base_file = st.file_uploader("Upload CSV/XLSX", type=['csv', 'xlsx'], key="base")
 
-    # Dashboard Tabs
-    tab1, tab2, tab3 = st.tabs(["📊 Data Preview", "🧠 AI Analysis & Merging", "📈 Visual Insights"])
+# --- PROCESSING ENGINE ---
+if s1_file and s2_file and base_file:
+    # Load Data
+    @st.cache_data
+    def load_data(file):
+        return pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
 
-    with tab1:
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("Target Template Structure")
-            st.dataframe(df_sample.head(5), use_container_width=True)
-        with col2:
-            st.subheader("Source Files Overview")
-            for name, df in dataframes.items():
-                with st.expander(f"File: {name}"):
-                    st.write(f"Rows: {df.shape[0]}, Columns: {df.shape[1]}")
-                    st.write(list(df.columns))
+    df_s1 = load_data(s1_file)
+    df_s2 = load_data(s2_file)
+    df_base = load_data(base_file)
 
-    with tab2:
-        st.subheader("Chat with Efazi")
-        user_msg = st.chat_input("Ex: 'Merge these sources into the template using Fuzzy VLOOKUP on Customer Name'")
-        
-        if user_msg:
-            # Prepare context for AI
-            context = f"Target Format Columns: {list(df_sample.columns)}\n"
-            for name, df in dataframes.items():
-                context += f"Source '{name}' has columns: {list(df.columns)}\n"
+    if st.button("🚀 RUN AUTOMATION"):
+        with st.spinner("Efazi is replicating the report structure..."):
+            
+            # 1. Normalize IDs for VLOOKUP
+            df_s1['order_id'] = df_s1.iloc[:, 0].astype(str).str.strip()
+            df_s2['order_id'] = df_s2.iloc[:, 0].astype(str).str.strip()
+            df_base['order_id'] = df_base.get('order_id', df_base.iloc[:, 0]).astype(str).str.strip()
 
-            with st.spinner("Efazi is calculating..."):
-                prompt = f"System: You are Efazi, a professional Data Scientist. Use Fuzzy Merge logic. Context: {context}. Task: {user_msg}"
-                response = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt}])
+            # 2. Merge Data (VLOOKUP Logic)
+            merged = pd.merge(df_base, df_s1, on='order_id', how='left', suffixes=('', '_s1'))
+            merged = pd.merge(merged, df_s2, on='order_id', how='left', suffixes=('', '_s2'))
+
+            # 3. Apply Careem ROD Mathematical Logic
+            processed_rows = []
+            for _, row in merged.iterrows():
+                # Date Parsing
+                o_date = parse_date(row.get('order_date', ''))
+                p_date = parse_date(row.get('order_process', ''))
+                d_end = parse_date(row.get('delivery_ended_at', ''))
+                c_assign = parse_date(row.get('captain_assigned_at', ''))
+                c_arrive = parse_date(row.get('captain_arrived_for_pickup_at', ''))
+                d_start = parse_date(row.get('delivery_started_at', ''))
+
+                # Metrics Calculation
+                otp = calculate_minutes(p_date, o_date) # Order to Process
+                otd = calculate_minutes(d_end, o_date)  # Order to Delivery
+                ota = calculate_minutes(c_assign, o_date) # Order to Assign
+                atra = calculate_minutes(c_arrive, c_assign) # Assign to Arrive
+                atp = calculate_minutes(d_start, c_arrive)  # Arrive to Pickup
+                ptd = calculate_minutes(d_end, d_start)     # Pickup to Delivery
                 
-                st.markdown("### Efazi's Professional Insight:")
-                st.write(response.choices[0].message.content)
+                pickup_time = atra + atp
+                dist = float(row.get('distance_to_customer_km', 0))
 
-        st.markdown("---")
-        if st.button("🚀 Replicate & Generate Full Report"):
-            st.success("Efazi is processing the multi-file VLOOKUP... (Draft Ready)")
-            # Standard merge logic can be added here
-            st.download_button("Download Processed Report (CSV)", df_sample.to_csv(index=False), "Efazi_Report.csv")
+                # Remark Logic
+                remark = "On time"
+                if otp <= 0: remark = "CS Cancelled/ST rejected"
+                elif otd > 90:
+                    remark = "LM breach" if otp <= 20 else "Store Breach"
+                elif otd <= 0:
+                    remark = "Rider Cancelled"
 
-    with tab3:
-        st.subheader("Dynamic Visualization")
-        if st.checkbox("Show Data Summary Chart"):
-            # Simple example: Row counts per file
-            chart_data = pd.DataFrame({
-                'File Name': list(dataframes.keys()),
-                'Total Rows': [df.shape[0] for df in dataframes.values()]
-            })
-            fig = px.bar(chart_data, x='File Name', y='Total Rows', color='File Name', title="Data Volume per Source")
-            st.plotly_chart(fig, use_container_width=True)
+                # RCA Logic
+                rca = ""
+                if remark == "Store Breach":
+                    rca = f"{int(otp)} min taken for store processing."
+                elif remark == "LM breach":
+                    if ota > 5 and pickup_time > 20: rca = f"{int(ota)} min assigning, {int(pickup_time)} min pickup."
+                    elif ota > 5: rca = f"{int(ota)} min taken for assigning."
+                    elif ptd > 60: rca = f"{int(ptd)} min pickup to delivery for {dist} KM."
+                    else: rca = "Last Mile delay during delivery."
 
-# Footer
-st.markdown("---")
-st.caption("Efazi AI v2.0 | Powered by Groq | Secure Data Analysis")
+                # Build final dictionary matching your HTML structure
+                processed_rows.append({
+                    'Order_ID': row['order_id'],
+                    'Shipped_Qty': row.get('shipped_qty', 0),
+                    'Store_Name': row.get('store_name', ''),
+                    'Order_to_Process': otp,
+                    'Order_to_Delivery': otd,
+                    'Remark': remark,
+                    'RCA': rca
+                })
+
+            final_df = pd.DataFrame(processed_rows)
+
+            # 4. Show Result & Export
+            st.subheader("✅ Report Preview")
+            st.dataframe(final_df.head(10), use_container_width=True)
+            
+            csv = final_df.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 DOWNLOAD COMPLETED REPORT", data=csv, file_name="Careem_ROD_Final.csv", mime='text/csv')
+
+# --- FOOTER ---
+st.divider()
+st.caption("Developed by Hasainul | Efazi AI Engine v2.0")
