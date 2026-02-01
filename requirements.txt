@@ -3,4 +3,5 @@ groq
 requests
 pandas
 openpyxl
-geopy
+flask
+gunicorn
