@@ -1,7 +1,6 @@
-streamlit
+python-telegram-bot
+groq
+requests
 pandas
 openpyxl
-groq
-thefuzz
-python-Levenshtein
-plotly
+geopy
